@@ -32,8 +32,9 @@ RED="\033[0;31m"
 GREEN="\033[0;32m"
 YELLOW="\033[1;33m"
 
-CURRENT_USER=$(id -u):$(id -g)
 CURRENT_USER_HOME=~/
+CURRENT_USER_ID=$(id -u)
+CURRENT_USER_GROUP_ID=$(id -g)
 
 MNT_DIRECTORY_NAME="VirtualDrives"
 WORKSPACE_DIRECTORY_NAME="VirtualDrives"
@@ -282,10 +283,9 @@ actionCreate () {
 
     if [[ "$VD_VAULT_IS_ENCRYPTED" = "y" ]]; then
         cryptsetup --verify-passphrase luksFormat $VD_VAULT_FILE_PATH
-        cryptsetup open --type luks vaultfile.img myvault
     fi
 
-    chown $CURRENT_USER $VD_VAULT_FILE_PATH
+    chown $CURRENT_USER_ID:$CURRENT_USER_GROUP_ID $VD_VAULT_FILE_PATH
 
     printText text "Virtual drive has been sucessfully created"
     printText text "  ==> $VD_VAULT_FILE_PATH"
@@ -311,21 +311,31 @@ actionMount () {
     fi
 
     printText text "Creating a mount directory..."
-    printText text "  ==> /mnt/$MNT_DIRECTORY_NAME/$VD_VAULT_NAME"
-    mkdir "/mnt/$MNT_DIRECTORY_NAME/$VD_VAULT_NAME"
+    printText text "  ==> /mnt/$MNT_DIRECTORY_NAME/VirtualDrives/$VD_VAULT_NAME"
+
+    mkdir -p "/mnt/$MNT_DIRECTORY_NAME/VirtualDrives/$VD_VAULT_NAME"
 
     printText text "Mounting the virtual drive..."
     printText text "  ==> $VD_VAULT_FILE_PATH"
+
     if [ $(isVaultFileEncrypted $VD_VAULT_FILE_PATH) ]; then
-        cryptsetup open --type luks $VD_VAULT_FILE_PATH "vdrives_${VD_VAULT_NAME}"
+        cryptsetup open --type luks $VD_VAULT_FILE_PATH "VD_${VD_VAULT_NAME}"
+
         mount -t auto -o loop \
             "/dev/mapper/$VD_VAULT_NAME" \
             "/mnt/$MNT_DIRECTORY_NAME/$VD_VAULT_NAME"
+
+        bindfs -u $CURRENT_USER_ID -g $CURRENT_USER_GROUP_ID \
+            "/mnt/$MNT_DIRECTORY_NAME/$VD_VAULT_NAME"
+            "${CURRENT_USER_HOME}VirtualDrive_${VD_VAULT_NAME}"
     else
         mount -t auto -o loop \
-            $VD_VAULT_FILE_PATH \
+            "$VD_VAULT_FILE_PATH" \
             "/mnt/$MNT_DIRECTORY_NAME/$VD_VAULT_NAME"
+
+        bindfs -u $CURRENT_USER_ID -g $CURRENT_USER_GROUP_ID $MOUNT_PATH_ARGS
     fi
+
 
     printText nl
     printText successText "$VD_VAULT_NAME has been mounted"
@@ -395,17 +405,23 @@ escalateScriptPrivilage () {
         printText nl
         printText text "Please enter your ${YELLOW}root${NC} password to proceed"
 
-        set -- "$@" --current-user $CURRENT_USER
+        set -- "$@" --current-user-id $CURRENT_USER_ID
+        set -- "$@" --current-user-group-id $CURRENT_USER_GROUP_ID
         set -- "$@" --current-user-directory $CURRENT_USER_HOME
 
-        su - root  -- "$(pwd)/$0" "$@"
+        su - root  -- "$0" "$@"
         exit $?
     fi
 
     while [ "$#" -gt 0 ]; do
         case "$1" in
-            --current-user)
-                CURRENT_USER=$2
+            --current-user-id)
+                CURRENT_USER_ID=$2
+                shift
+            ;;
+
+            --current-user-group-id)
+                CURRENT_USER_GROUP_ID=$2
                 shift
             ;;
 
@@ -428,10 +444,35 @@ isVaultFileEncrypted() {
     fi
 }
 
+getMountDir () {
+    VAR_GET_MOUNT_DIR="/mnt/$MNT_DIRECTORY_NAME/$1"
+    echo $(formatFilePath $VAR_GET_MOUNT_DIR)
+}
+
+getBindDir () {
+    VAR_GET_BIND_DIR="$(getVaultMountedDir)/$1"
+    echo $(formatFilePath $VAR_GET_BIND_DIR)
+}
+
+getVaultDir () {
+    VAR_GET_VAULT_DIR="${CURRENT_USER_HOME}/${WORKSPACE_DIRECTORY_NAME}"
+    echo $(formatFilePath $VAR_GET_VAULT_DIR)
+}
+
+getVaultMountedDir () {
+    VAR_GET_VAULT_MOUNTED_DIR="$(getVaultDir)/Mounted"
+    echo $(formatFilePath $VAR_GET_VAULT_MOUNTED_DIR)
+}
+
+getVaultFileDir () {
+    VAR_GET_VAULT_FILE_DIR="$(getVaultDir)/Vaults"
+    echo $(formatFilePath $VAR_GET_VAULT_FILE_DIR)
+}
+
 getVaultFilePath () {
     VAR_GET_VAULT_FILE_PATH__RESULT=""
 
-    VAR_GET_VAULT_FILE_PATH__BASE="${CURRENT_USER_HOME}/${WORKSPACE_DIRECTORY_NAME}/${VD_VAULT_NAME}"
+    VAR_GET_VAULT_FILE_PATH__BASE="$(getVaultFileDir)${VD_VAULT_NAME}"
     VAR_GET_VAULT_FILE_PATH__BASE=$(formatFilePath $VAR_GET_VAULT_FILE_PATH__BASE)
 
     declare -a EXTENSIONS=(".img" ".encrypted.img")
@@ -484,14 +525,17 @@ validateArgumentValue () {
 
 checkForRequiredDependencies () {
     shellCommandRequired "dd"
+    shellCommandRequired "mount"
+    shellCommandRequired "bindfs"
     shellCommandRequired "cryptsetup"
 }
 
 createTheToolDirectories () {
-    mkdir -p "$CURRENT_USER_HOME$WORKSPACE_DIRECTORY_NAME"
-    chown $CURRENT_USER $CURRENT_USER_HOME$WORKSPACE_DIRECTORY_NAME
+    mkdir -p $(formatFilePath "$CURRENT_USER_HOME$WORKSPACE_DIRECTORY_NAME")
+    mkdir -p $(formatFilePath "$CURRENT_USER_HOME$WORKSPACE_DIRECTORY_NAME/Vaults/")
+    mkdir -p $(formatFilePath "$CURRENT_USER_HOME$WORKSPACE_DIRECTORY_NAME/Mounted/")
 
-    mkdir -p "/mnt/$MNT_DIRECTORY_NAME"
+    chown -R $CURRENT_USER_ID:$CURRENT_USER_GROUP_ID $CURRENT_USER_HOME$WORKSPACE_DIRECTORY_NAME
 }
 
 parseArgs () {
@@ -535,7 +579,11 @@ parseArgs () {
                 exit 1
             ;;
 
-            --current-user)
+            --current-user-id)
+                shift
+            ;;
+
+            --current-user-group-id)
                 shift
             ;;
 

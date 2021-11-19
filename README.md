@@ -6,6 +6,7 @@ A script that helps you to create and mount virtual drives with ease.
 
 ## Prerequisite
 
+-   bindfs
 -   cryptsetup
 
 ## Prerequisite Installation
@@ -14,7 +15,9 @@ A script that helps you to create and mount virtual drives with ease.
 
 ```bash
 apt update
-apt install cryptsetup -y
+apt install -y \
+    bindfs \
+    cryptsetup
 ```
 
 ### Install the script
@@ -45,7 +48,7 @@ rm -rf $HOME/.virtual-drive
 With this method `virtual-drive` can be used by all users.
 
 ```bash
-sudo ln -s $HOME/.virtual-drive/optimize.sh /usr/local/bin/virtual-drive
+sudo ln -s $HOME/.virtual-drive/virtual-drive.sh /usr/local/bin/virtual-drive
 sudo chmod +x /usr/local/bin/virtual-drive
 ```
 
