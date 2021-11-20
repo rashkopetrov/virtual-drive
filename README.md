@@ -11,6 +11,8 @@ A script that helps you to create and mount virtual drives with ease.
 -   Create a virtual drive:
     -   `virtual-drive create --name myVault`
 -   Create a virtual drive and mount it:
+    -   `virtual-drive create --mount --name myVault`
+-   Create an encrypted virtual drive:
     -   `virtual-drive create --encrypted --name myVault`
 -   Mount the virtual drive
     -   `virtual-drive mount --name myVault`
@@ -18,6 +20,10 @@ A script that helps you to create and mount virtual drives with ease.
     -   `virtual-drive unmount --name myVault`
 -   Delete the virtual drive
     -   `virtual-drive delete --name myVault`
+-   List all virtual drives
+    -   `virtual-drive list`
+-   List only mounted virtual drives
+    -   `virtual-drive list --list-mounted`
 
 ## Examples
 

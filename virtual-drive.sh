@@ -44,6 +44,7 @@ WORKSPACE_DIRECTORY_NAME="VirtualDrives"
 
 VD_COMMAND="" # create|mount|unmount|umount|list|fix
 VD_VAULT_NAME=""
+VD_VAULT_SIZE="512"
 VD_VAULT_IS_ENCRYPTED="" # <empty>|y
 VD_VAULT_OPEN_AFTER_MOUNT="" # <empty>|y
 VD_VAULT_MOUNT_AFTER_CREATE="" # <empty>|y
@@ -70,6 +71,7 @@ printHelp () {
             printText text "Options:"
             printText nl
             printText text "  --name         The name of the virtual drive"
+            printText text "  --size         The size in MB [default: 512]"
             printText text "  --encrypted    Whether the drive to be password proteced or not"
             printText text "                     You will be asked for a passphrase during the set"
             printText text "  --mount        Mount the newly created virtual drive"
@@ -258,8 +260,7 @@ run () {
         ;;
 
         list)
-            printText alertText "Not implemented yet"
-            exit 1
+            actionList
         ;;
 
         fix)
@@ -282,7 +283,7 @@ actionCreate () {
     fi
 
     printText text "Creating a virtual drive. It might take a while..."
-    dd if=/dev/urandom of=$VD_VAULT_FILE_PATH bs=1M count=512 status=progress
+    dd if=/dev/urandom of=$VD_VAULT_FILE_PATH bs=1M count=$VD_VAULT_SIZE status=progress
 
     printText text "Creating ext4 filesystem..."
     mkfs.ext4 -L $VD_VAULT_NAME $VD_VAULT_FILE_PATH
@@ -436,6 +437,19 @@ actionDelete () {
     rm -rf $BIND_DIR
 
     printText successText "$VD_VAULT_NAME has been deleted"
+}
+
+actionList () {
+    VAR_ACTION_LIST=""
+    case "$VD_VAULT_LIST" in
+        mounted)
+            VAR_ACTION_LIST=$(ls -lh $(getVaultMountedDir) | awk '{printf "%s\t%s\n",$9,$5}')
+        ;;
+    *)
+    VAR_ACTION_LIST=$(ls -lh $(getVaultFileDir) | awk '{printf "%s\t%s\n",$9,$5}')
+    esac
+
+    echo "$VAR_ACTION_LIST" | sed -r 's/(\.img|\.encrypted\.img)//g'
 }
 
 escalateScriptPrivilage () {
@@ -595,7 +609,7 @@ createTheToolDirectories () {
 
 parseArgs () {
     ALL_ARGS=("create" "mount" "unmount" "umount" "list" "fix")
-    ALL_ARGS+=("--workspace" "--name" "--mount" "--open" "--encrypted" "--list-mounted")
+    ALL_ARGS+=("--workspace" "--name" "--mount" "--size" "--open" "--encrypted" "--list-mounted")
     ALL_ARGS+=("-h" "--help" "help")
     ALL_ARGS+=("-v" "--version" "version")
     ALL_ARGS+=("--current-user-name" "--current-user-id" "--current-user-group-id" "--current-user-directory")
@@ -609,6 +623,12 @@ parseArgs () {
             --name)
                 validateArgumentValue "${ALL_ARGS[@]}" "$1" "$2"
                 VD_VAULT_NAME=$2
+                shift
+            ;;
+
+            --size)
+                validateArgumentValue "${ALL_ARGS[@]}" "$1" "$2"
+                VD_VAULT_SIZE=$2
                 shift
             ;;
 
