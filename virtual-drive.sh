@@ -5,11 +5,13 @@
 # Author          :Rashko Petrov
 # Website         :https://rashkopetrov.dev
 # GitHub          :https://github.com/rashkopetrov/virtual-drive
-# Date            :2021-11-18
-# Version         :0.21.11.18
+# Date            :2021-11-20
+# Version         :0.21.11.20
 # Usage           :bash virtual-drive.sh
-# BashVersion     :Tested with 5.1.4
-# OS              :Tested on Debian 11
+# OS/Bash         :Debian 10
+#                 :Debian 11
+#                 :GNU bash 5.1.4
+#                 :GNU bash 5.0.1
 # License         :MIT License
 #                 :Copyright (c) 2021 Rashko Petrov
 # ###########################################
@@ -25,7 +27,7 @@
 # ===========================================
 
 # majorVersion.year.month.day
-VERSION="0.21.11.18"
+VERSION="0.21.11.20"
 
 NC="\033[0m" # No Colo
 RED="\033[0;31m"
@@ -33,15 +35,17 @@ GREEN="\033[0;32m"
 YELLOW="\033[1;33m"
 
 CURRENT_USER_HOME=~/
+CURRENT_USER_NAME=$(whoami)
 CURRENT_USER_ID=$(id -u)
 CURRENT_USER_GROUP_ID=$(id -g)
 
 MNT_DIRECTORY_NAME="VirtualDrives"
 WORKSPACE_DIRECTORY_NAME="VirtualDrives"
 
-VD_COMMAND="" # create|mount|unmount|list|fix
+VD_COMMAND="" # create|mount|unmount|umount|list|fix
 VD_VAULT_NAME=""
 VD_VAULT_IS_ENCRYPTED="" # <empty>|y
+VD_VAULT_OPEN_AFTER_MOUNT="" # <empty>|y
 VD_VAULT_MOUNT_AFTER_CREATE="" # <empty>|y
 VD_VAULT_LIST="all" # unmounted|mounted|all
 VD_VAULT_FILE_PATH=""
@@ -69,6 +73,8 @@ printHelp () {
             printText text "  --encrypted    Whether the drive to be password proteced or not"
             printText text "                     You will be asked for a passphrase during the set"
             printText text "  --mount        Mount the newly created virtual drive"
+            printText text "  --open         Opens the mounted drive with Nautilus"
+            printText text "                     The '--mount' option is required"
             printText nl
             printText text "Examples:"
             printText text "  virtual-drive --name mySecretVault"
@@ -84,12 +90,13 @@ printHelp () {
             printText text "Options:"
             printText nl
             printText text "  --name         The name of the virtual drive"
+            printText text "  --open         Opens the mounted drive with Nautilus"
             printText nl
             printText text "Examples:"
             printText text "  virtual-drive mount --name mySecretVault"
         ;;
 
-        unmount)
+        unmount | umount)
             printText text "Command: Unmount"
             printText text "Usage: virtual-drive unmount [OPTIONS...]"
             printText nl
@@ -141,7 +148,7 @@ printHelp () {
     printText nl
     printText text "  create"
     printText text "  mount"
-    printText text "  unmount"
+    printText text "  unmount|umount"
     printText text "  list"
     printText text "  fix"
     printText nl
@@ -239,15 +246,14 @@ run () {
         ;;
 
         delete)
-            printText alertText "Not implemented yet"
-            exit 1
+            actionDelete
         ;;
 
         mount)
             actionMount
         ;;
 
-        unmount)
+        unmount | umount)
             actionUnmount
         ;;
 
@@ -310,32 +316,41 @@ actionMount () {
         exit 1
     fi
 
-    printText text "Creating a mount directory..."
-    printText text "  ==> /mnt/$MNT_DIRECTORY_NAME/VirtualDrives/$VD_VAULT_NAME"
+    MOUNT_DIR=$(getMountDir $VD_VAULT_NAME)
+    BIND_DIR=$(getBindDir $VD_VAULT_NAME)
 
-    mkdir -p "/mnt/$MNT_DIRECTORY_NAME/VirtualDrives/$VD_VAULT_NAME"
+    printText text "Creating a mount directory..."
+    printText text "  ==> $MOUNT_DIR"
+
+    mkdir -p $MOUNT_DIR
+    mkdir -p $BIND_DIR
 
     printText text "Mounting the virtual drive..."
+    printText text "  ==> this directory is mounted as root user"
     printText text "  ==> $VD_VAULT_FILE_PATH"
 
     if [ $(isVaultFileEncrypted $VD_VAULT_FILE_PATH) ]; then
-        cryptsetup open --type luks $VD_VAULT_FILE_PATH "VD_${VD_VAULT_NAME}"
+        cryptsetup open --type luks $VD_VAULT_FILE_PATH "vd_${VD_VAULT_NAME}"
 
-        mount -t auto -o loop \
-            "/dev/mapper/$VD_VAULT_NAME" \
-            "/mnt/$MNT_DIRECTORY_NAME/$VD_VAULT_NAME"
-
-        bindfs -u $CURRENT_USER_ID -g $CURRENT_USER_GROUP_ID \
-            "/mnt/$MNT_DIRECTORY_NAME/$VD_VAULT_NAME"
-            "${CURRENT_USER_HOME}VirtualDrive_${VD_VAULT_NAME}"
+        mount -t auto -o loop "/dev/mapper/vd_$VD_VAULT_NAME" $MOUNT_DIR
     else
-        mount -t auto -o loop \
-            "$VD_VAULT_FILE_PATH" \
-            "/mnt/$MNT_DIRECTORY_NAME/$VD_VAULT_NAME"
-
-        bindfs -u $CURRENT_USER_ID -g $CURRENT_USER_GROUP_ID $MOUNT_PATH_ARGS
+        mount -t auto -o loop $VD_VAULT_FILE_PATH $MOUNT_DIR
     fi
 
+    printText text "Binding the mounted directory with user permissions"
+    printText text "  ==> this directory is mounted as the user running the script"
+    printText text "  ==> $BIND_DIR"
+    bindfs -u $CURRENT_USER_ID -g $CURRENT_USER_GROUP_ID $MOUNT_DIR $BIND_DIR
+
+    printText text "To open the directory from the terminal"
+    printText text "  ==> xdg-open $BIND_DIR"
+
+    # if [[ "$VD_VAULT_OPEN_AFTER_MOUNT" = "y" ]]; then
+        # if [ !-z $CURRENT_USER_NAME ]; then
+        #    su - $CURRENT_USER_NAME
+        #    xgd-open $BIND_DIR
+        # fi
+    # fi
 
     printText nl
     printText successText "$VD_VAULT_NAME has been mounted"
@@ -352,26 +367,50 @@ actionUnmount () {
         exit 1
     fi
 
-    MOUNT_DIR="/mnt/$MNT_DIRECTORY_NAME/$VD_VAULT_NAME"
+    MOUNT_DIR=$(getMountDir $VD_VAULT_NAME)
+    BIND_DIR=$(getBindDir $VD_VAULT_NAME)
 
     printText text "Unmounting $MOUNT_DIR"
-    umount $MOUNT_DIR
+    umount -l $MOUNT_DIR
+    umount -f $MOUNT_DIR
 
     if [ $(isVaultFileEncrypted $VD_VAULT_FILE_PATH) ]; then
         printText text "Closing the encrypted virtual drive..."
-        cryptsetup close "vdrives_${VD_VAULT_NAME}"
+        cryptsetup close "vd_${VD_VAULT_NAME}"
     fi
 
     printText text "Removing the mount directory"
     printText text "  ==> $MOUNT_DIR"
     rm -rf $MOUNT_DIR
 
+    printText text "Removing the bind directory"
+    printText text "  ==> $BIND_DIR"
+    rm -rf $BIND_DIR
+
     printText nl
     printText successText "$VD_VAULT_NAME has been unmounted"
 }
 
 actionDelete () {
+    printText noticeText "Deleting a virtual drive is permanent action"
+    printText text "Do you want to proceed?"
+    read -p "$* [y/n]: " yn
+    case  $yn in
+        [Nn]*)
+            printText text "Aborted."
+            exit 1
+        ;;
+
+        [Yy]*)
+            printText text "Proceeding..."
+            printText nl
+        ;;
+    *)
+    esac
+
     actionUnmount
+    printText nl
+
     validateVaultName "delete"
 
     VD_VAULT_FILE_PATH=$(getVaultFilePath)
@@ -385,6 +424,16 @@ actionDelete () {
     printText text "Deleting the virtual drive"
     printText text "  ==> $VD_VAULT_FILE_PATH"
     rm $VD_VAULT_FILE_PATH
+
+    MOUNT_DIR=$(getMountDir $VD_VAULT_NAME)
+    printText text "Removing the mount directory"
+    printText text "  ==> $MOUNT_DIR"
+    rm -rf $MOUNT_DIR
+
+    BIND_DIR=$(getBindDir $VD_VAULT_NAME)
+    printText text "Removing the bind directory"
+    printText text "  ==> $BIND_DIR"
+    rm -rf $BIND_DIR
 
     printText successText "$VD_VAULT_NAME has been deleted"
 }
@@ -405,6 +454,7 @@ escalateScriptPrivilage () {
         printText nl
         printText text "Please enter your ${YELLOW}root${NC} password to proceed"
 
+        set -- "$@" --current-user-name $CURRENT_USER_NAME
         set -- "$@" --current-user-id $CURRENT_USER_ID
         set -- "$@" --current-user-group-id $CURRENT_USER_GROUP_ID
         set -- "$@" --current-user-directory $CURRENT_USER_HOME
@@ -415,6 +465,11 @@ escalateScriptPrivilage () {
 
     while [ "$#" -gt 0 ]; do
         case "$1" in
+            --current-user-name)
+                CURRENT_USER_NAME=$2
+                shift
+            ;;
+
             --current-user-id)
                 CURRENT_USER_ID=$2
                 shift
@@ -472,7 +527,7 @@ getVaultFileDir () {
 getVaultFilePath () {
     VAR_GET_VAULT_FILE_PATH__RESULT=""
 
-    VAR_GET_VAULT_FILE_PATH__BASE="$(getVaultFileDir)${VD_VAULT_NAME}"
+    VAR_GET_VAULT_FILE_PATH__BASE="$(getVaultFileDir)/${VD_VAULT_NAME}"
     VAR_GET_VAULT_FILE_PATH__BASE=$(formatFilePath $VAR_GET_VAULT_FILE_PATH__BASE)
 
     declare -a EXTENSIONS=(".img" ".encrypted.img")
@@ -490,7 +545,7 @@ getVaultFilePath () {
         fi
     fi
 
-    echo $VAR_GET_VAULT_FILE_PATH__RESULT
+    echo $(formatFilePath $VAR_GET_VAULT_FILE_PATH__RESULT)
 }
 
 validateVaultName () {
@@ -539,15 +594,15 @@ createTheToolDirectories () {
 }
 
 parseArgs () {
-    ALL_ARGS=("create" "mount" "unmount" "list" "fix")
-    ALL_ARGS+=("--workspace" "--name" "--encrypted" "--list-mounted")
+    ALL_ARGS=("create" "mount" "unmount" "umount" "list" "fix")
+    ALL_ARGS+=("--workspace" "--name" "--mount" "--open" "--encrypted" "--list-mounted")
     ALL_ARGS+=("-h" "--help" "help")
     ALL_ARGS+=("-v" "--version" "version")
-    ALL_ARGS+=("--current-user" "--current-user-directory")
+    ALL_ARGS+=("--current-user-name" "--current-user-id" "--current-user-group-id" "--current-user-directory")
 
     while [ "$#" -gt 0 ]; do
         case "$1" in
-            create | mount | unmount | list | fix)
+            create | mount | unmount | umount | delete | list | fix)
                 VD_COMMAND=$1
             ;;
 
@@ -559,6 +614,10 @@ parseArgs () {
 
             --mount)
                 VD_VAULT_MOUNT_AFTER_CREATE="y"
+            ;;
+
+            --open)
+                VD_VAULT_OPEN_AFTER_MOUNT="y"
             ;;
 
             --encrypted)
@@ -577,6 +636,10 @@ parseArgs () {
             -v | --version | version)
                 printText text $VERSION
                 exit 1
+            ;;
+
+            --current-user-name)
+                shift
             ;;
 
             --current-user-id)
