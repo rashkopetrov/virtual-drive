@@ -285,11 +285,22 @@ actionCreate () {
     printText text "Creating a virtual drive. It might take a while..."
     dd if=/dev/urandom of=$VD_VAULT_FILE_PATH bs=1M count=$VD_VAULT_SIZE status=progress
 
-    printText text "Creating ext4 filesystem..."
-    mkfs.ext4 -L $VD_VAULT_NAME $VD_VAULT_FILE_PATH
 
     if [[ "$VD_VAULT_IS_ENCRYPTED" = "y" ]]; then
+        printText text "Encrypting the drive..."
         cryptsetup --verify-passphrase luksFormat $VD_VAULT_FILE_PATH
+
+        printText text "Opening the drive..."
+        cryptsetup open --type luks $VD_VAULT_FILE_PATH "vd_${VD_VAULT_NAME}"
+
+        printText text "Creating ext4 filesystem..."
+        mkfs.ext4 -L $VD_VAULT_NAME "/dev/mapper/vd_$VD_VAULT_NAME"
+
+        printText text "Closing the drive..."
+        cryptsetup close $VD_VAULT_NAME
+    else
+        printText text "Creating ext4 filesystem..."
+        mkfs.ext4 -L $VD_VAULT_NAME $VD_VAULT_FILE_PATH
     fi
 
     chown $CURRENT_USER_ID:$CURRENT_USER_GROUP_ID $VD_VAULT_FILE_PATH
