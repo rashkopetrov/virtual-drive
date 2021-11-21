@@ -3,7 +3,6 @@
 ## Prerequisite
 
 -   bindfs
--   cryptsetup
 
 ## Prerequisite Installation
 
@@ -11,9 +10,7 @@
 
 ```bash
 apt update
-apt install -y \
-    bindfs \
-    cryptsetup
+apt install -y bindfs
 ```
 
 ### Install the script
@@ -66,6 +63,7 @@ Commands:
   unmount|umount
   list
   fix
+  resize
 
 Options:
 

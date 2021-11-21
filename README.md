@@ -8,12 +8,14 @@ A script that helps you to create and mount virtual drives with ease.
 
 ## Usage
 
+-   Help text:
+    -   `virtual-drive --help`
 -   Create a virtual drive:
     -   `virtual-drive create --name myVault`
+-   Create a virtual drive (100MB):
+    -   `virtual-drive create --name myVault --size 100`
 -   Create a virtual drive and mount it:
     -   `virtual-drive create --mount --name myVault`
--   Create an encrypted virtual drive:
-    -   `virtual-drive create --encrypted --name myVault`
 -   Mount the virtual drive
     -   `virtual-drive mount --name myVault`
 -   Unmount the virtual drive
@@ -24,6 +26,8 @@ A script that helps you to create and mount virtual drives with ease.
     -   `virtual-drive list`
 -   List only mounted virtual drives
     -   `virtual-drive list --list-mounted`
+-   Resize the virtual drive (new size 200MB)
+    -   `virtual-drive resize --name myVault --size 200
 
 ## Examples
 

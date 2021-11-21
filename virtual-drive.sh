@@ -5,8 +5,8 @@
 # Author          :Rashko Petrov
 # Website         :https://rashkopetrov.dev
 # GitHub          :https://github.com/rashkopetrov/virtual-drive
-# Date            :2021-11-20
-# Version         :0.21.11.20
+# Date            :2021-11-22
+# Version         :0.21.11.22
 # Usage           :bash virtual-drive.sh
 # OS/Bash         :Debian 10
 #                 :Debian 11
@@ -27,7 +27,7 @@
 # ===========================================
 
 # majorVersion.year.month.day
-VERSION="0.21.11.20"
+VERSION="0.21.11.22"
 
 NC="\033[0m" # No Colo
 RED="\033[0;31m"
@@ -72,15 +72,12 @@ printHelp () {
             printText nl
             printText text "  --name         The name of the virtual drive"
             printText text "  --size         The size in MB [default: 512]"
-            printText text "  --encrypted    Whether the drive to be password proteced or not"
-            printText text "                     You will be asked for a passphrase during the set"
             printText text "  --mount        Mount the newly created virtual drive"
             printText text "  --open         Opens the mounted drive with Nautilus"
             printText text "                     The '--mount' option is required"
             printText nl
             printText text "Examples:"
-            printText text "  virtual-drive --name mySecretVault"
-            printText text "  virtual-drive --encrypted --name mySecretVault"
+            printText text "  virtual-drive --name myVault"
         ;;
 
         mount)
@@ -95,7 +92,7 @@ printHelp () {
             printText text "  --open         Opens the mounted drive with Nautilus"
             printText nl
             printText text "Examples:"
-            printText text "  virtual-drive mount --name mySecretVault"
+            printText text "  virtual-drive mount --name myVault"
         ;;
 
         unmount | umount)
@@ -109,7 +106,7 @@ printHelp () {
             printText text "  --name         The name of the virtual drive"
             printText nl
             printText text "Examples:"
-            printText text "  virtual-drive unmount --name mySecretVault"
+            printText text "  virtual-drive unmount --name myVault"
         ;;
 
         list)
@@ -141,6 +138,22 @@ printHelp () {
             printText text "Examples:"
             printText text "  virtual-drive list"
         ;;
+
+        resize)
+            printText text "Command: Resize"
+            printText text "Usage: virtual-drive resize [OPTIONS...]"
+            printText nl
+            printText text "Resize an existing virtual drive"
+            printText text "The new size must be greater than the existing one"
+            printText nl
+            printText text "Options:"
+            printText nl
+            printText text "  --name         The name of the virtual drive"
+            printText text "  --size         The size in MB"
+            printText nl
+            printText text "Examples:"
+            printText text "  virtual-drive --name myVault -- size <size in MB>"
+        ;;
     *)
 
     printText text "Usage: virtual-drive <command> [OPTIONS...]"
@@ -153,6 +166,7 @@ printHelp () {
     printText text "  unmount|umount"
     printText text "  list"
     printText text "  fix"
+    printText text "  resize"
     printText nl
     printText text "Options:"
     printText nl
@@ -267,6 +281,11 @@ run () {
             printText alertText "Not implemented yet"
             exit 1
         ;;
+
+        resize)
+            printText alertText "Not implemented yet"
+            exit 1
+        ;;
     *)
     esac
 }
@@ -285,23 +304,8 @@ actionCreate () {
     printText text "Creating a virtual drive. It might take a while..."
     dd if=/dev/urandom of=$VD_VAULT_FILE_PATH bs=1M count=$VD_VAULT_SIZE status=progress
 
-
-    if [[ "$VD_VAULT_IS_ENCRYPTED" = "y" ]]; then
-        printText text "Encrypting the drive..."
-        cryptsetup --verify-passphrase luksFormat $VD_VAULT_FILE_PATH
-
-        printText text "Opening the drive..."
-        cryptsetup open --type luks $VD_VAULT_FILE_PATH "vd_${VD_VAULT_NAME}"
-
-        printText text "Creating ext4 filesystem..."
-        mkfs.ext4 -L $VD_VAULT_NAME "/dev/mapper/vd_$VD_VAULT_NAME"
-
-        printText text "Closing the drive..."
-        cryptsetup close $VD_VAULT_NAME
-    else
-        printText text "Creating ext4 filesystem..."
-        mkfs.ext4 -L $VD_VAULT_NAME $VD_VAULT_FILE_PATH
-    fi
+    printText text "Creating ext4 filesystem..."
+    mkfs.ext4 -L $VD_VAULT_NAME $VD_VAULT_FILE_PATH
 
     chown $CURRENT_USER_ID:$CURRENT_USER_GROUP_ID $VD_VAULT_FILE_PATH
 
@@ -341,13 +345,7 @@ actionMount () {
     printText text "  ==> this directory is mounted as root user"
     printText text "  ==> $VD_VAULT_FILE_PATH"
 
-    if [ $(isVaultFileEncrypted $VD_VAULT_FILE_PATH) ]; then
-        cryptsetup open --type luks $VD_VAULT_FILE_PATH "vd_${VD_VAULT_NAME}"
-
-        mount -t auto -o loop "/dev/mapper/vd_$VD_VAULT_NAME" $MOUNT_DIR
-    else
-        mount -t auto -o loop $VD_VAULT_FILE_PATH $MOUNT_DIR
-    fi
+    mount -t auto -o loop $VD_VAULT_FILE_PATH $MOUNT_DIR
 
     printText text "Binding the mounted directory with user permissions"
     printText text "  ==> this directory is mounted as the user running the script"
@@ -385,11 +383,6 @@ actionUnmount () {
     printText text "Unmounting $MOUNT_DIR"
     umount -l $MOUNT_DIR
     umount -f $MOUNT_DIR
-
-    if [ $(isVaultFileEncrypted $VD_VAULT_FILE_PATH) ]; then
-        printText text "Closing the encrypted virtual drive..."
-        cryptsetup close "vd_${VD_VAULT_NAME}"
-    fi
 
     printText text "Removing the mount directory"
     printText text "  ==> $MOUNT_DIR"
@@ -619,15 +612,15 @@ createTheToolDirectories () {
 }
 
 parseArgs () {
-    ALL_ARGS=("create" "mount" "unmount" "umount" "list" "fix")
-    ALL_ARGS+=("--workspace" "--name" "--mount" "--size" "--open" "--encrypted" "--list-mounted")
+    ALL_ARGS=("create" "mount" "unmount" "umount" "list" "fix" "resize")
+    ALL_ARGS+=("--workspace" "--name" "--mount" "--size" "--open" "--list-mounted")
     ALL_ARGS+=("-h" "--help" "help")
     ALL_ARGS+=("-v" "--version" "version")
     ALL_ARGS+=("--current-user-name" "--current-user-id" "--current-user-group-id" "--current-user-directory")
 
     while [ "$#" -gt 0 ]; do
         case "$1" in
-            create | mount | unmount | umount | delete | list | fix)
+            create | mount | unmount | umount | delete | list | fix | resize)
                 VD_COMMAND=$1
             ;;
 
@@ -649,10 +642,6 @@ parseArgs () {
 
             --open)
                 VD_VAULT_OPEN_AFTER_MOUNT="y"
-            ;;
-
-            --encrypted)
-                VD_VAULT_IS_ENCRYPTED="y"
             ;;
 
             --list-mounted)
